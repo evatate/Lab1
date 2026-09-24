@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+
+# C/C++
+*.o
+*.out
+*.exe
+*.a
+*.dSYM/
+core
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
