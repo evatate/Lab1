@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+
+# ==============================================================================
+# File Name:     ping.py
+# Author:        Eva Tate and Giselle Wu
+# Course:        CS60: Computer Networks
+# Assignment:    Lab 1: Packet sniffing and spoofing
+# Date:          September 29, 2026
+# 
+# Description:   Implements a ping program described in Lab 1, Exercise 1.
+# 
+# ==============================================================================
+
 """Ping tool using Scapy.
 
 Usage: sudo python3 ping.py <target ip or domain>
@@ -40,7 +52,7 @@ def main():
                 received += 1
                 print(f"64 bytes from {dest_ip}: icmp_seq={seq} time={rtt_ms:.3f} ms")
             else:
-                print(f"Request timeout for icmp_seq={seq}")
+                print(f"No reply (request timeout) for icmp_seq={seq}")
 
             seq += 1
             time.sleep(1)
