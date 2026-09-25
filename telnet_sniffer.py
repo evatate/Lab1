@@ -27,11 +27,18 @@ from scapy.packet import Raw
 from scapy.sendrecv import sniff
 
 TELNET_PORT = 23
-# Printable ASCII, plus carriage return / line feed.
-PRINTABLE = set(range(0x20, 0x7F)) | {0x0D, 0x0A}
+TELNET_IAC = 0xFF  # marks option-negotiation data (terminal type, window size, ...)
+PRINTABLE = set(range(0x20, 0x7F))  # visible ASCII only; CR/LF handled separately below
+
+# Telnet's "Enter" is CR followed by a padding NUL or LF (CR NUL / CR LF).
+# Tracks whether the previous byte was a CR, so that pairing byte can be
+# swallowed instead of producing a second blank line.
+_after_cr = False
 
 
 def handle_packet(pkt):
+    global _after_cr
+
     if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
         return
 
@@ -43,10 +50,30 @@ def handle_packet(pkt):
         return
 
     data = pkt[Raw].load
+
+    # Telnet option negotiation (IAC DO/WILL/SB ... SE) is not a keystroke,
+    # even though the embedded option text (e.g. a terminal type or speed
+    # string) is itself printable. Drop the whole packet if it contains IAC.
+    if TELNET_IAC in data:
+        return
+
     for byte in data:
-        # Skip telnet protocol negotiation bytes (IAC/DO/WILL/etc.), which
-        # show up as non-printable control bytes outside of CR/LF.
-        if byte in PRINTABLE:
+        if _after_cr and byte in (0x00, 0x0A):
+            # Second half of a CR-NUL / CR-LF "Enter" pair; already handled.
+            _after_cr = False
+            continue
+        _after_cr = False
+
+        if byte == 0x0D:
+            # A bare '\r' would just return the cursor to the start of the
+            # current line, so the next word (e.g. the password) overwrites
+            # the previous one (e.g. the username) on screen. Print a real
+            # newline instead so each line the user typed stays visible.
+            sys.stdout.write("\n")
+            _after_cr = True
+        elif byte == 0x0A:
+            sys.stdout.write("\n")
+        elif byte in PRINTABLE:
             sys.stdout.write(chr(byte))
     sys.stdout.flush()
 
