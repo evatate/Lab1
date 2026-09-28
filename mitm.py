@@ -19,11 +19,10 @@
 Usage:
     sudo python3 mitm.py <iface> <hostA_ip> <hostA_mac> <hostB_ip> <hostB_mac> [repoison_interval_sec]
 
-This poisons Host A to believe Host B's IP is at the attacker's MAC, and
-poisons Host B to believe Host A's IP is at the attacker's MAC, then
-periodically re-sends the spoofed ARP replies (real ARP traffic between A
-and B, or entry timeouts, would otherwise heal the tables) while sniffing
-telnet keystrokes crossing the attacker's interface.
+Poisons both hosts so each thinks the other's IP is at the attacker's MAC,
+then re-sends the spoofed replies on a timer (otherwise the tables heal
+from real ARP traffic or timeouts) while sniffing the telnet keystrokes
+that now cross the attacker.
 """
 
 import sys
